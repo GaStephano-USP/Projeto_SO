@@ -228,12 +228,13 @@ int main(){
     std::vector<Process> createdProcess;
     Process execProcess(0, 0, 0, false, "EMPTY",{});
     BitMap bitmap(true, memory);
-    //procesar arquivo com confugurações iniciais
+    //procesar arquivo com confugurações iniciais - IMPLEMENTAR
 
     //processar comando enviado
     while(1){
         //caso não se tenha mensagens
         if(!receiveComand(message)) std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
         else{
             if(message.find("exit") != std::string::npos) break;
             if(message.find("create") != std::string::npos){
@@ -244,7 +245,7 @@ int main(){
                 if(readyQueue.empty()) killProcess(message, bitmap, readyQueue, createdProcess);
                 else readyQueue.push(message);
             }
-            //Printar na tela
+            //Printar na tela - IMPLEMENTAR (verificar se aqui é o melhor lugar para isso)
         };
         if(!readyQueue.empty() and execProcess.state=="EMPTY"){
             executeProcess(readyQueue.front(), execProcess, createdProcess);
@@ -252,9 +253,9 @@ int main(){
         }
         //implementar lógica de escalonamento de processos
 
-        //FIFO
+        //FIFO - IMPLEMENTAR
 
-        //Round-Robin
+        //Round-Robin - IMPLEMENTAR
 
     }
     return 0;

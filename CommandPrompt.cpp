@@ -15,6 +15,8 @@ int main() {
             message[i] = std::tolower(message[i]);
         }
 
+        //Verificar se comandos estão no padrão esperado, tanto em relação a memória pedida quanto no formato - IMPLEMENTAR
+
         std::ofstream pipeOut("buffer", std::ios::out);
         pipeOut << message << std::endl;
         pipeOut.close();
