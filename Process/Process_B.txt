@@ -1,0 +1,4 @@
+MOV AX, 0
+ADD AX, 4
+MOV BX, AX
+HLT
