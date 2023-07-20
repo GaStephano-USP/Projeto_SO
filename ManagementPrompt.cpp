@@ -14,7 +14,7 @@ const int TOTAL_MEMORY_SIZE = 20;
 
 int PROCESS_ID = 1;
 
-std::vector<int> memory(TOTAL_MEMORY_SIZE - 1);
+std::vector<int> memory(TOTAL_MEMORY_SIZE);
 
 std::vector<std::string> readFile(std::string filename){
     std::string path = "Process\\"+ filename;
@@ -32,8 +32,8 @@ std::vector<std::string> readFile(std::string filename){
 
         file.close();
         return lines;
-
     }
+    return {};
 };
 
 struct Process{
@@ -60,6 +60,16 @@ struct TCB{
     std::vector<std::string> registers;
 };
 
+struct BitMap{
+    bool compacted;
+    std::vector<int> memory;
+
+    BitMap(bool _compacted, std::vector<int> _memory){
+        compacted = _compacted;
+        memory = _memory;
+    }
+};
+
 Process chooseProcess(int memorySize){
     std::random_device rd;
     std::mt19937 gerador(rd());
@@ -70,13 +80,42 @@ Process chooseProcess(int memorySize){
     return process;
 };
 
-bool allocateMemory(std::vector<int>& memory, Process process) {
+std::vector<std::string> separateString(std::string message){
+    std::istringstream iss(message);
+    std::vector<std::string> elements;
+    std::string token;
+    while (iss >> token) {
+        elements.push_back(token);
+    }
+    return elements;
+}
+
+void compactMemory(BitMap& bitmap){
+
+    int index = 0;
+
+    for (int i = 0; i < bitmap.memory.size(); i++) {
+        if (bitmap.memory[i] > 0) {
+            bitmap.memory[index] = bitmap.memory[i];
+            index++;
+        }
+    }
+
+    // Preenche os espaços restantes com um valor especial (nesse exemplo, -1)
+    while (index < bitmap.memory.size()) {
+        bitmap.memory[index] = 0;
+        index++;
+    }
+    bitmap.compacted = true;
+};
+
+bool allocateMemory(BitMap& bitmap, Process process) {
     int memorySize = process.memorySize;
     int start = -1;
     int count = 0;
     // Percorre a memória em busca de posições livres
-    for (int i = 0; i < memory.size(); i++) {
-        if (memory[i] == 0) {
+    for (int i = 0; i < bitmap.memory.size(); i++) {
+        if (bitmap.memory[i] == 0) {
             if (count == 0) {
                 start = i;
             }
@@ -88,22 +127,25 @@ bool allocateMemory(std::vector<int>& memory, Process process) {
 
         if (count == memorySize) {
             for (int j = start; j < start + memorySize; j++) {
-                memory[j] = process.id; // Marcando a memória como alocada com o ID do processo
+                bitmap.memory[j] = process.id; // Marcando a memória como alocada com o ID do processo
             }
             return true;
         }
     }
+    if(!bitmap.compacted) {
+        compactMemory(bitmap);
+        if(allocateMemory(bitmap, process)) return true;
+    };
 
     return false; // Não há memória suficiente disponível
 };
 
-bool deallocateMemory(std::vector<int>& memory, Process& process) {
-    int processID = process.id;
+bool deallocateMemory(BitMap& bitmap, int processID) {
     bool status = false;
 
-    for (int i = 0; i < memory.size(); i++) {
-        if (memory[i] == processID) {
-            memory[i] = 0;
+    for (int i = 0; i < bitmap.memory.size(); i++) {
+        if (bitmap.memory[i] == processID) {
+            bitmap.memory[i] = 0;
             status = true;
         }
     }
@@ -127,43 +169,65 @@ bool receiveComand(std::string& message){
     return false;
 };
 
-void compactBitMap(std::vector<int>& memory){
-
-    std::vector<int> compacted(memory.size());
-    for (size_t i = 0; i < memory.size(); ++i) {
-        if(memory[i] > 0) compacted[i] = memory[i];
-    }
-    std::copy(compacted.begin(), compacted.end(), memory.begin());
-};
-
-void createProcess(std::string message, std::vector<int>& memory, std::queue<std::string>& readyQueue){
-    //seleciona um processo aleatório da pasta de processos
-    std::istringstream iss(message);
-    std::vector<std::string> elements;
-    std::string token;
-
-    while (iss >> token) {
-        elements.push_back(token);
-    }
+void createProcess(std::string message, std::vector<int>& memory, std::queue<std::string>& readyQueue, std::vector<Process>& createdProcess, BitMap& bitmap){
+    std::vector<std::string> elements = separateString(message);
     // instrução no formato create -m 4, element[2] = 4
     int memorySize = std::stoi(elements[2]);
     Process process = chooseProcess(memorySize);
+    createdProcess.push_back(process);
     
     //alocar memória
-    if(allocateMemory(memory, process)) process.isAlocated = true;
+    if(allocateMemory(bitmap, process)) process.isAlocated = true;
 
     //Colocar processo na fila de prontos
     readyQueue.push("PID " + std::to_string(process.id));
 
 };
 
-void killProcess(std::string message, std::vector<int>& memory){
+void killProcess(std::string message, BitMap& bitmap, std::queue<std::string>& readyQueue, std::vector<Process>& createdProcess){
+    std::queue<std::string> copy = readyQueue;
+
+    std::string PID = separateString(message)[1];
+    
+    //Verifica process na fila de prontos
+    while (!copy.empty()) {
+        std::string element = copy.front(); 
+        //buscando mensagem no formato PID 9
+         if(element.find("PID") != std::string::npos){      
+            if(PID == (separateString(element)[1])){
+                 for (int i = 0; i < createdProcess.size(); i++){
+                    if(createdProcess[i].isAlocated){
+                        if(!deallocateMemory(bitmap, std::stoi(PID))) std::cout << "ERRO AO LIBERAR MEMÓRIA";
+                    }
+                    else createdProcess.erase(createdProcess.begin() + i);
+                 }
+                break;
+            }
+         }
+        copy.pop();
+    }
+
+};
+
+void executeProcess(std::string PID, Process& process, std::vector<Process> createdProcess){
+    std::vector<std::string> elements = separateString(PID);
+    int id = std::stoi(elements[1]);
+    for(int i = 0; i < createdProcess.size(); i++){
+        if(createdProcess[i].id == std::stoi(elements[1])){
+            createdProcess[i].state = "EXECUTING";
+            process = createdProcess[i];
+            break;
+        }
+    }
 
 };
 
 int main(){
     std::string message;
     std::queue<std::string> readyQueue;
+    std::vector<Process> createdProcess;
+    Process execProcess(0, 0, 0, false, "EMPTY",{});
+    BitMap bitmap(true, memory);
     //procesar arquivo com confugurações iniciais
 
     //processar comando enviado
@@ -173,13 +237,19 @@ int main(){
         else{
             if(message.find("exit") != std::string::npos) break;
             if(message.find("create") != std::string::npos){
-                createProcess(message, memory, readyQueue);
+                if(readyQueue.empty()) createProcess(message, memory, readyQueue, createdProcess, bitmap);
+                else readyQueue.push(message);
             }
             else{
-                killProcess(message, memory);
+                if(readyQueue.empty()) killProcess(message, bitmap, readyQueue, createdProcess);
+                else readyQueue.push(message);
             }
             //Printar na tela
         };
+        if(!readyQueue.empty() and execProcess.state=="EMPTY"){
+            executeProcess(readyQueue.front(), execProcess, createdProcess);
+            readyQueue.pop();
+        }
         //implementar lógica de escalonamento de processos
 
         //FIFO
