@@ -153,7 +153,7 @@ bool deallocateMemory(BitMap& bitmap, int processID) {
 };
 
 bool receiveComand(std::string& message){
-    std::ifstream pipeIn("buffer", std::ios::in);
+    std::ifstream pipeIn("buffer.txt", std::ios::in);
 
     // Verifica se há algo no pipe antes de tentar ler a mensagem
     if (pipeIn.peek() != std::ifstream::traits_type::eof()) {
@@ -174,10 +174,11 @@ void createProcess(std::string message, std::vector<int>& memory, std::queue<std
     // instrução no formato create -m 4, element[2] = 4
     int memorySize = std::stoi(elements[2]);
     Process process = chooseProcess(memorySize);
-    createdProcess.push_back(process);
     
     //alocar memória
     if(allocateMemory(bitmap, process)) process.isAlocated = true;
+
+    createdProcess.push_back(process);
 
     //Colocar processo na fila de prontos
     readyQueue.push("PID " + std::to_string(process.id));
@@ -205,6 +206,7 @@ void killProcess(std::string message, BitMap& bitmap, std::queue<std::string>& r
             }
          }
         copy.pop();
+        //Falta implementar como apagar da fila de prontos
     }
 
 };
@@ -238,24 +240,24 @@ int main(){
         else{
             if(message.find("exit") != std::string::npos) break;
             if(message.find("create") != std::string::npos){
-                if(readyQueue.empty()) createProcess(message, memory, readyQueue, createdProcess, bitmap);
+                if(execProcess.state=="EMPTY"){ 
+                    createProcess(message, memory, readyQueue, createdProcess, bitmap);
+                    executeProcess(readyQueue.front(), execProcess, createdProcess);
+                    //readyQueue.pop();
+                }
                 else readyQueue.push(message);
             }
             else{
-                if(readyQueue.empty()) killProcess(message, bitmap, readyQueue, createdProcess);
+                if(execProcess.state=="EMPTY") killProcess(message, bitmap, readyQueue, createdProcess);
                 else readyQueue.push(message);
             }
             //Printar na tela - IMPLEMENTAR (verificar se aqui é o melhor lugar para isso)
         };
-        if(!readyQueue.empty() and execProcess.state=="EMPTY"){
-            executeProcess(readyQueue.front(), execProcess, createdProcess);
-            readyQueue.pop();
-        }
         //implementar lógica de escalonamento de processos
 
         //FIFO - IMPLEMENTAR
 
-        //Round-Robin - IMPLEMENTAR
+        //Round-Robin - IMPLEMENTAR 
 
     }
     return 0;

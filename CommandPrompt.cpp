@@ -17,7 +17,7 @@ int main() {
 
         //Verificar se comandos estão no padrão esperado, tanto em relação a memória pedida quanto no formato - IMPLEMENTAR
 
-        std::ofstream pipeOut("buffer", std::ios::out);
+        std::ofstream pipeOut("buffer.txt", std::ios::out);
         pipeOut << message << std::endl;
         pipeOut.close();
         if (message == "exit") {
