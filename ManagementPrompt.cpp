@@ -160,7 +160,7 @@ bool receiveComand(std::string& message){
         std::getline(pipeIn, message);
  
         // Limpa o conteúdo do pipe após a leitura, abrindo-o em modo de escrita
-        std::ofstream pipeOut("buffer", std::ios::out | std::ios::trunc);
+        std::ofstream pipeOut("buffer.txt", std::ios::out | std::ios::trunc);
         pipeOut.close();
         pipeIn.close();
         return true;
@@ -224,25 +224,48 @@ void executeProcess(std::string PID, Process& process, std::vector<Process> crea
 
 };
 
+void operateSystemConfig(int& schedulerKind, int& dispatcherClock) {
+    std::ifstream inConfig("config.txt", std::ios::in);
+    std::string line_config;
+    std::vector<std::string> config_parameter;
+    while (inConfig.peek() != std::ifstream::traits_type::eof()) {
+        std::getline(inConfig, line_config);
+        config_parameter = separateString(line_config);
+        if (config_parameter[0] == "-schedulerKind") {
+            schedulerKind = stoi(config_parameter[1]);
+        } else {
+            dispatcherClock = stoi(config_parameter[1]);
+        }
+    }
+}
+
 int main(){
     std::string message;
     std::queue<std::string> readyQueue;
     std::vector<Process> createdProcess;
+    int schedulerKind;
+    int dispatcherClock;
+    int disptacherCounter;
+    int printed = 0;
     Process execProcess(0, 0, 0, false, "EMPTY",{});
     BitMap bitmap(true, memory);
     //procesar arquivo com confugurações iniciais - IMPLEMENTAR
-
+    operateSystemConfig(schedulerKind, dispatcherClock);
     //processar comando enviado
     while(1){
         //caso não se tenha mensagens
-        if(!receiveComand(message)) std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
+        if(!receiveComand(message)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+            std::cout << "Esperando por instrução \n";
+        }
         else{
             if(message.find("exit") != std::string::npos) break;
             if(message.find("create") != std::string::npos){
+                std::cout << "Instrucao recebida\n";
                 if(execProcess.state=="EMPTY"){ 
                     createProcess(message, memory, readyQueue, createdProcess, bitmap);
                     executeProcess(readyQueue.front(), execProcess, createdProcess);
+                    std::cout << message;
                     //readyQueue.pop();
                 }
                 else readyQueue.push(message);
@@ -250,9 +273,21 @@ int main(){
             else{
                 if(execProcess.state=="EMPTY") killProcess(message, bitmap, readyQueue, createdProcess);
                 else readyQueue.push(message);
+                std::cout << "mata esse cara";
             }
             //Printar na tela - IMPLEMENTAR (verificar se aqui é o melhor lugar para isso)
-        };
+        }
+        if (schedulerKind == 0) {
+            std::cout << "FIFO Algoritmo \n";
+        } else {
+            std::cout << "Round Robin Algortimo \n";
+        }
+            std::cout << dispatcherClock << "\n";
+        if (printed == 0) {
+            std::cout << "PID" << execProgicess.id << "Memoria" << execProcess.memorySize << "\n";
+            printed = 1;
+        }
+
         //implementar lógica de escalonamento de processos
 
         //FIFO - IMPLEMENTAR
