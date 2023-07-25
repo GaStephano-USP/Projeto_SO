@@ -38,21 +38,36 @@ std::vector<std::string> readFile(std::string filename){
 
 struct Process{
     int id;
+    std::string header;
     int memorySize;
     int programCounter;
     bool isAlocated;
     std::string state;
+    std::string scope;
     std::vector<std::string> instructions;
 
-    Process(int _id, int _memorySize, int _programCounter, bool _isAlocated, std::string _state, const std::vector<std::string>& _instructions){
+    Process(
+        int _id, 
+        std::string _header,
+        int _memorySize,
+        int _programCounter,
+        bool _isAlocated,
+        std::string _state,
+        std::string _scope,
+        const std::vector<std::string>& _instructions
+        ) {
         id = _id;
+        header = _header;
         memorySize = _memorySize;
         programCounter = _programCounter;
         isAlocated = _isAlocated;
         state = _state;
+        scope = _scope;
         instructions = _instructions;
     };
 };
+
+
 
 struct TCB{
     int process_id;
@@ -68,89 +83,82 @@ struct BitMap{
         compacted = _compacted;
         memory = _memory;
     }
-};
 
-Process chooseProcess(int memorySize){
-    std::random_device rd;
-    std::mt19937 gerador(rd());
-    std::uniform_int_distribution<int> distribuicao(0, AvailableProcess.size() - 1);
-    std::string randomProcess = AvailableProcess[distribuicao(gerador)];
-
-    Process process(PROCESS_ID++, memorySize, 0, false, "READY", readFile(randomProcess));
-    return process;
-};
-
-std::vector<std::string> separateString(std::string message){
-    std::istringstream iss(message);
-    std::vector<std::string> elements;
-    std::string token;
-    while (iss >> token) {
-        elements.push_back(token);
-    }
-    return elements;
-}
-
-void compactMemory(BitMap& bitmap){
-
-    int index = 0;
-
-    for (int i = 0; i < bitmap.memory.size(); i++) {
-        if (bitmap.memory[i] > 0) {
-            bitmap.memory[index] = bitmap.memory[i];
-            index++;
-        }
-    }
-
-    // Preenche os espaços restantes com um valor especial (nesse exemplo, -1)
-    while (index < bitmap.memory.size()) {
-        bitmap.memory[index] = 0;
-        index++;
-    }
-    bitmap.compacted = true;
-};
-
-bool allocateMemory(BitMap& bitmap, Process process) {
-    int memorySize = process.memorySize;
-    int start = -1;
-    int count = 0;
-    // Percorre a memória em busca de posições livres
-    for (int i = 0; i < bitmap.memory.size(); i++) {
-        if (bitmap.memory[i] == 0) {
-            if (count == 0) {
-                start = i;
-            }
-            count++;
-        } else {
-            count = 0;
-            start = -1;
+    void allocateMemory(Process process, int startPos) {
+        int memorySize = process.memorySize;
+        std::cout << "Alocando " << memorySize << " a partir de" << startPos << "Para ID: "<< process.id <<"\n";
+        for (int j = startPos; j < startPos + memorySize; j++) {
+            memory[j] = process.id; // Marcando a memória como alocada com o ID do processo
         }
 
-        if (count == memorySize) {
-            for (int j = start; j < start + memorySize; j++) {
-                bitmap.memory[j] = process.id; // Marcando a memória como alocada com o ID do processo
-            }
-            return true;
-        }
-    }
-    if(!bitmap.compacted) {
-        compactMemory(bitmap);
-        if(allocateMemory(bitmap, process)) return true;
     };
 
-    return false; // Não há memória suficiente disponível
-};
+    bool deallocateMemory(int processID) {
+        bool status = false;
 
-bool deallocateMemory(BitMap& bitmap, int processID) {
-    bool status = false;
-
-    for (int i = 0; i < bitmap.memory.size(); i++) {
-        if (bitmap.memory[i] == processID) {
-            bitmap.memory[i] = 0;
-            status = true;
+        for (int i = 0; i < memory.size(); i++) {
+            if (memory[i] == processID) {
+                memory[i] = 0;
+                status = true;
+            }
         }
-    }
-    return status;
+        return status;
+    };
+
+    void printMemoryMap() {
+        for(int m: memory) {
+            std::cout << " | "<< m;
+        }
+        std::cout << " | " << std::endl;
+    };
+
+    void compactMemory(){
+        int index = 0;
+
+        for (int i = 0; i < memory.size(); i++) {
+            if (memory[i] > 0) {
+                memory[index] = memory[i];
+                index++;
+            }
+        }
+        // Preenche os espaços restantes com um valor especial (nesse exemplo, -1)
+        while (index < memory.size()) {
+            memory[index] = 0;
+            index++;
+        }
+        compacted = true;
+    };
+
+    // retorna -1 se não tem memória, ou a primeira posicao do segmento livre
+    int hasMemoryAvaliable(int memoryRequested){
+        int start = 0;
+        int count = 0;
+               // Percorre a memória em busca de posições livres
+        for (int i = 0; i < memory.size(); i++) {
+            if (memory[i] == 0) {
+                if (count == 0) {
+                    start = i;
+                }
+                count++;
+            } else {
+                count = 0;
+                start = -1;
+            }
+            if (count >= memoryRequested) {
+                return start;
+            }
+        }
+        
+        // Remove fragmentação externa e tenta novamente
+        if(!compacted) {
+            compactMemory();
+            return hasMemoryAvaliable(memoryRequested);
+        };
+
+        return -1;
+    };
 };
+
 
 bool receiveComand(std::string& message){
     std::ifstream pipeIn("buffer.txt", std::ios::in);
@@ -169,24 +177,54 @@ bool receiveComand(std::string& message){
     return false;
 };
 
-void createProcess(std::string message, std::vector<int>& memory, std::queue<std::string>& readyQueue, std::vector<Process>& createdProcess, BitMap& bitmap){
+std::vector<std::string> separateString(std::string message){
+    std::istringstream iss(message);
+    std::vector<std::string> elements;
+    std::string token;
+    while (iss >> token) {
+        elements.push_back(token);
+    }
+    return elements;
+}
+
+std::string getProcessInstructions(){
+    std::random_device rd;
+    std::mt19937 gerador(rd());
+    std::uniform_int_distribution<int> distribuicao(0, AvailableProcess.size() - 1);
+    std::string randomProcess = AvailableProcess[distribuicao(gerador)];
+    
+    return randomProcess;
+};
+
+void createProcess(std::string message, std::queue<Process>& readyQueue, BitMap& bitmap){
     std::vector<std::string> elements = separateString(message);
+    int processID = PROCESS_ID++;
     // instrução no formato create -m 4, element[2] = 4
     int memorySize = std::stoi(elements[2]);
-    Process process = chooseProcess(memorySize);
-    
-    //alocar memória
-    if(allocateMemory(bitmap, process)) process.isAlocated = true;
+    std::string processHeader;
+    int initPC = 0;
+    std::string instructions = getProcessInstructions();
+    int freeSegment = bitmap.hasMemoryAvaliable(memorySize);
 
-    createdProcess.push_back(process);
+    // Cria processo se há memória suficiente
+    if(freeSegment != -1) {
+        processHeader = "PID " + std::to_string(processID);
+        Process process(processID, processHeader, memorySize, initPC, true, "READY", "USER", readFile(instructions));
+        bitmap.allocateMemory(process, freeSegment);
+        readyQueue.push(process);
 
-    //Colocar processo na fila de prontos
-    readyQueue.push("PID " + std::to_string(process.id));
+    } else {
+        processHeader = "create";
+        Process process(processID, processHeader, memorySize, initPC, false, "READY", "SO", {message});
+        //Colocar processo na fila de prontos
+        readyQueue.push(process);
+    }
+
 
 };
 
-void killProcess(std::string message, BitMap& bitmap, std::queue<std::string>& readyQueue, std::vector<Process>& createdProcess){
-    std::queue<std::string> copy = readyQueue;
+void killProcess(std::string message, BitMap& bitmap, std::queue<std::string>& rdQueChange, std::vector<Process>& createdProcess){
+    std::queue<std::string> copy = rdQueChange;
 
     std::string PID = separateString(message)[1];
     
@@ -198,7 +236,7 @@ void killProcess(std::string message, BitMap& bitmap, std::queue<std::string>& r
             if(PID == (separateString(element)[1])){
                  for (int i = 0; i < createdProcess.size(); i++){
                     if(createdProcess[i].isAlocated){
-                        if(!deallocateMemory(bitmap, std::stoi(PID))) std::cout << "ERRO AO LIBERAR MEMÓRIA";
+                        if(!bitmap.deallocateMemory(std::stoi(PID))) std::cout << "ERRO AO LIBERAR MEMÓRIA";
                     }
                     else createdProcess.erase(createdProcess.begin() + i);
                  }
@@ -211,18 +249,28 @@ void killProcess(std::string message, BitMap& bitmap, std::queue<std::string>& r
 
 };
 
-void executeProcess(std::string PID, Process& process, std::vector<Process> createdProcess){
-    std::vector<std::string> elements = separateString(PID);
-    int id = std::stoi(elements[1]);
-    for(int i = 0; i < createdProcess.size(); i++){
-        if(createdProcess[i].id == std::stoi(elements[1])){
-            createdProcess[i].state = "EXECUTING";
-            process = createdProcess[i];
-            break;
-        }
-    }
-
+void setExecutingProcess(std::queue<Process>& readyQueue, Process& executingProcess) {
+    executingProcess = readyQueue.front();
+    executingProcess.state = "EXECUTING";
+    readyQueue.pop();
 };
+
+void scheduleProcesses(Process& executingProcess, std::queue<Process>& readyQueue, int schedulerType, BitMap& bitmap) {
+    if(schedulerType == 1 && readyQueue.size() != 0) {
+        Process nextInQueue = readyQueue.front();
+        if (nextInQueue.scope == "USER") {
+            std::cout << "PROCESSO DE USUARIO PEGO \n";
+            executingProcess.state = "READY";
+            readyQueue.push(executingProcess);
+            executingProcess = nextInQueue;
+            executingProcess.state = "EXECUTING";
+        } else {
+            std::cout << "PROCESSO DE SO PEGO \n";
+            createProcess(nextInQueue.instructions[0], readyQueue, bitmap);
+        }
+        readyQueue.pop();
+    } 
+}
 
 void operateSystemConfig(int& schedulerKind, int& dispatcherClock) {
     std::ifstream inConfig("config.txt", std::ios::in);
@@ -237,57 +285,85 @@ void operateSystemConfig(int& schedulerKind, int& dispatcherClock) {
             dispatcherClock = stoi(config_parameter[1]);
         }
     }
-}
+};
+
+void printReadyQueue(std::queue<Process> readyQueue) {
+    std::cout << "Fila de Prontos - ";
+    while(!readyQueue.empty()) {
+        std::cout << readyQueue.front().header << "(" << readyQueue.front().state << ")" << " ";
+        readyQueue.pop();
+    }
+    std::cout << std::endl;
+
+};
+
+void printExecutingProcess(Process executingProcess) {
+    std::cout << "Executando: " << executingProcess.id << "  " << executingProcess.state;
+    std::cout << " PC: " << executingProcess.programCounter;
+    std::cout << std::endl;
+};
 
 int main(){
-    std::string message;
-    std::queue<std::string> readyQueue;
-    std::vector<Process> createdProcess;
     int schedulerKind;
     int dispatcherClock;
-    int disptacherCounter;
-    int printed = 0;
-    Process execProcess(0, 0, 0, false, "EMPTY",{});
+    int execCounter = 0;
+    std::string message;
+    std::queue<std::string> rdQueChange;
+    std::vector<Process> createdProcess;
+    
+    std::queue<Process> readyQueue;
+    Process executingProcess(0, "", 0, 0, false, "EMPTY", "UNDEF",{});
     BitMap bitmap(true, memory);
-    //procesar arquivo com confugurações iniciais - IMPLEMENTAR
+
+    //procesa arquivo com confugurações iniciais
     operateSystemConfig(schedulerKind, dispatcherClock);
-    //processar comando enviado
-    while(1){
-        //caso não se tenha mensagens
+    
+    // EXECUTA SO
+    while(1) {
+
+        // BLOCO DE COMANDOS RECEBIDOS
         if(!receiveComand(message)) {
             std::this_thread::sleep_for(std::chrono::milliseconds(2500));
-            std::cout << "Esperando por instrução \n";
-        }
-        else{
+        } else {
             if(message.find("exit") != std::string::npos) break;
             if(message.find("create") != std::string::npos){
-                std::cout << "Instrucao recebida\n";
-                if(execProcess.state=="EMPTY"){ 
-                    createProcess(message, memory, readyQueue, createdProcess, bitmap);
-                    executeProcess(readyQueue.front(), execProcess, createdProcess);
-                    std::cout << message;
-                    //readyQueue.pop();
+                if(executingProcess.state == "EMPTY"){ 
+                    createProcess(message, readyQueue, bitmap);
+                    setExecutingProcess(readyQueue, executingProcess);
+                    //rdQueChange.pop(); // provavelmente não será mais usado
+                } else {
+                    int processID = PROCESS_ID++;
+                    std::string processHeader = "create";
+                    Process process(processID, processHeader, 0, 0, false, "READY", "OS", {message});
+                    readyQueue.push(process); 
                 }
-                else readyQueue.push(message);
             }
-            else{
-                if(execProcess.state=="EMPTY") killProcess(message, bitmap, readyQueue, createdProcess);
-                else readyQueue.push(message);
-                std::cout << "mata esse cara";
+            if (message.find("kill") != std::string::npos) {
+                if(executingProcess.state=="EMPTY") killProcess(message, bitmap, rdQueChange, createdProcess);
+                else rdQueChange.push(message);
+                std::cout << "Mata esse cara \n";
             }
             //Printar na tela - IMPLEMENTAR (verificar se aqui é o melhor lugar para isso)
         }
-        if (schedulerKind == 0) {
-            std::cout << "FIFO Algoritmo \n";
-        } else {
-            std::cout << "Round Robin Algortimo \n";
-        }
-            std::cout << dispatcherClock << "\n";
-        if (printed == 0) {
-            std::cout << "PID" << execProgicess.id << "Memoria" << execProcess.memorySize << "\n";
-            printed = 1;
-        }
 
+        // BLOCO DE EXECUÇÃO
+        if (executingProcess.state != "EMPTY") {
+            if (execCounter != dispatcherClock) {
+                executingProcess.programCounter++; // Substituir por função que "executa" de fato.
+                execCounter++;
+            } else {
+                std::cout << "Scheduler Called \n";
+                scheduleProcesses(executingProcess, readyQueue, schedulerKind, bitmap);
+                execCounter = 0;
+            }
+        }
+        std::cout << std::string(25, '-') << "\n";
+
+        printReadyQueue(readyQueue);
+        printExecutingProcess(executingProcess);
+        bitmap.printMemoryMap();
+        std::cout << std::string(25, '-') << "\n";
+        std::cout << "\n\n";
         //implementar lógica de escalonamento de processos
 
         //FIFO - IMPLEMENTAR
