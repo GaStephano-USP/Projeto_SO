@@ -223,29 +223,25 @@ void createProcess(std::string message, std::queue<Process>& readyQueue, BitMap&
 
 };
 
-void killProcess(std::string message, BitMap& bitmap, std::queue<std::string>& rdQueChange, std::vector<Process>& createdProcess){
-    std::queue<std::string> copy = rdQueChange;
+void killProcess(std::string message, std::queue<Process>& readyQueue, BitMap& bitmap){
+    std::queue<Process> copyQueue = readyQueue;
+    std::queue<Process> newQueue;
 
-    std::string PID = separateString(message)[1];
+    int targetPID = std::stoi((separateString(message)[1]));
     
-    //Verifica process na fila de prontos
-    while (!copy.empty()) {
-        std::string element = copy.front(); 
-        //buscando mensagem no formato PID 9
-         if(element.find("PID") != std::string::npos){      
-            if(PID == (separateString(element)[1])){
-                 for (int i = 0; i < createdProcess.size(); i++){
-                    if(createdProcess[i].isAlocated){
-                        if(!bitmap.deallocateMemory(std::stoi(PID))) std::cout << "ERRO AO LIBERAR MEMÓRIA";
-                    }
-                    else createdProcess.erase(createdProcess.begin() + i);
-                 }
-                break;
+    // Verifica process a ser eliminado na fila de prontos
+    while (!copyQueue.empty()) {
+        Process process = copyQueue.front(); 
+        if(targetPID == process.id) {
+            if(process.isAlocated) {
+                if(!bitmap.deallocateMemory(targetPID)) std::cout << "ERRO AO LIBERAR MEMÓRIA \n";
             }
-         }
-        copy.pop();
-        //Falta implementar como apagar da fila de prontos
+        } else {
+            newQueue.push(process);
+        }
+        copyQueue.pop();
     }
+    readyQueue = newQueue;
 
 };
 
@@ -258,18 +254,29 @@ void setExecutingProcess(std::queue<Process>& readyQueue, Process& executingProc
 void scheduleProcesses(Process& executingProcess, std::queue<Process>& readyQueue, int schedulerType, BitMap& bitmap) {
     if(schedulerType == 1 && readyQueue.size() != 0) {
         Process nextInQueue = readyQueue.front();
-        if (nextInQueue.scope == "USER") {
-            std::cout << "PROCESSO DE USUARIO PEGO \n";
-            executingProcess.state = "READY";
-            readyQueue.push(executingProcess);
-            executingProcess = nextInQueue;
-            executingProcess.state = "EXECUTING";
-        } else {
-            std::cout << "PROCESSO DE SO PEGO \n";
-            createProcess(nextInQueue.instructions[0], readyQueue, bitmap);
-        }
+        executingProcess.state = "READY";
+        readyQueue.push(executingProcess);
+        executingProcess = nextInQueue;
+        executingProcess.state = "EXECUTING";
         readyQueue.pop();
     } 
+}
+
+// Função responsável por executar um processo
+void runProcess(Process& executingProcess, std::queue<Process>& readyQueue, BitMap& bitmap) {
+    if (executingProcess.scope == "USER") {
+        executingProcess.programCounter++;
+    } else if (executingProcess.scope == "SO") {
+        std::string message = executingProcess.instructions[0];
+        if (message.find("create") != std::string::npos){
+            createProcess(message, readyQueue, bitmap);
+        } else {
+            killProcess(message, readyQueue, bitmap);
+        }
+        executingProcess = readyQueue.front();
+        readyQueue.pop();
+    } 
+    else return;
 }
 
 void operateSystemConfig(int& schedulerKind, int& dispatcherClock) {
@@ -308,9 +315,6 @@ int main(){
     int dispatcherClock;
     int execCounter = 0;
     std::string message;
-    std::queue<std::string> rdQueChange;
-    std::vector<Process> createdProcess;
-    
     std::queue<Process> readyQueue;
     Process executingProcess(0, "", 0, 0, false, "EMPTY", "UNDEF",{});
     BitMap bitmap(true, memory);
@@ -323,25 +327,31 @@ int main(){
 
         // BLOCO DE COMANDOS RECEBIDOS
         if(!receiveComand(message)) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+            std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         } else {
             if(message.find("exit") != std::string::npos) break;
-            if(message.find("create") != std::string::npos){
-                if(executingProcess.state == "EMPTY"){ 
+            if(message.find("create") != std::string::npos) {
+                if(executingProcess.state == "EMPTY") { 
                     createProcess(message, readyQueue, bitmap);
                     setExecutingProcess(readyQueue, executingProcess);
                     //rdQueChange.pop(); // provavelmente não será mais usado
                 } else {
                     int processID = PROCESS_ID++;
                     std::string processHeader = "create";
-                    Process process(processID, processHeader, 0, 0, false, "READY", "OS", {message});
+                    Process process(processID, processHeader, 0, 0, false, "READY", "SO", {message});
                     readyQueue.push(process); 
                 }
             }
             if (message.find("kill") != std::string::npos) {
-                if(executingProcess.state=="EMPTY") killProcess(message, bitmap, rdQueChange, createdProcess);
-                else rdQueChange.push(message);
-                std::cout << "Mata esse cara \n";
+                if(executingProcess.state=="EMPTY") {
+                    std::cout << "Não há processos em execução";
+                } else {
+                    int processID = PROCESS_ID++;
+                    std::string processHeader = "kill";
+                    Process process(processID, processHeader, 0, 0, false, "READY", "SO", {message});
+                    readyQueue.push(process);
+                    std::cout << "Mata esse cara \n";
+                }
             }
             //Printar na tela - IMPLEMENTAR (verificar se aqui é o melhor lugar para isso)
         }
@@ -349,7 +359,7 @@ int main(){
         // BLOCO DE EXECUÇÃO
         if (executingProcess.state != "EMPTY") {
             if (execCounter != dispatcherClock) {
-                executingProcess.programCounter++; // Substituir por função que "executa" de fato.
+                runProcess(executingProcess, readyQueue, bitmap);
                 execCounter++;
             } else {
                 std::cout << "Scheduler Called \n";
