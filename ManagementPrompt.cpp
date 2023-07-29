@@ -17,8 +17,8 @@ int PROCESS_ID = 1;
 std::vector<int> memory(TOTAL_MEMORY_SIZE);
 
 std::vector<std::string> readFile(std::string filename){
-    std::string path = "Process\\"+ filename;
-
+    std::string path = "./Process/" + filename;
+    std::cout << path << "\n";
     std::vector<std::string> lines;
 
     std::ifstream file(path);
@@ -308,6 +308,15 @@ void printExecutingProcess(Process executingProcess) {
     std::cout << "Executando: " << executingProcess.id << "  " << executingProcess.state;
     std::cout << " PC: " << executingProcess.programCounter;
     std::cout << std::endl;
+    for(int i = 0; i < executingProcess.instructions.size(); i++) {
+        std::string instruction = executingProcess.instructions[i];
+        std::cout << instruction;
+        if (i == executingProcess.programCounter) {
+            std::cout << " <--";
+        }
+        std::cout << "\n";
+    }
+    std::cout << executingProcess.instructions.size() << "\n";
 };
 
 int main(){
@@ -334,7 +343,6 @@ int main(){
                 if(executingProcess.state == "EMPTY") { 
                     createProcess(message, readyQueue, bitmap);
                     setExecutingProcess(readyQueue, executingProcess);
-                    //rdQueChange.pop(); // provavelmente não será mais usado
                 } else {
                     int processID = PROCESS_ID++;
                     std::string processHeader = "create";
@@ -367,8 +375,8 @@ int main(){
                 execCounter = 0;
             }
         }
-        std::cout << std::string(25, '-') << "\n";
 
+        std::cout << std::string(25, '-') << "\n";
         printReadyQueue(readyQueue);
         printExecutingProcess(executingProcess);
         bitmap.printMemoryMap();
