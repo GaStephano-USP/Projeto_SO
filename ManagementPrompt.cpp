@@ -36,7 +36,7 @@ std::vector<std::string> readFile(std::string filename){
     return {};
 };
 
-struct Process{
+struct Process {
     int id;
     std::string header;
     int memorySize;
@@ -67,15 +67,13 @@ struct Process{
     };
 };
 
-
-
-struct TCB{
+struct TCB {
     int process_id;
     int programCounter;
     std::vector<std::string> registers;
 };
 
-struct BitMap{
+struct BitMap {
     bool compacted;
     std::vector<int> memory;
 
@@ -159,6 +157,74 @@ struct BitMap{
     };
 };
 
+struct Scheduler {
+    int schedulerType;
+    int quantum;
+
+    Scheduler(int _schedulerType, int _quantum) {
+        schedulerType = _schedulerType;
+        quantum = _quantum;
+    };
+
+    void setExecutingProcess(std::queue<Process>& readyQueue, Process& executingProcess) {
+        executingProcess = readyQueue.front();
+        executingProcess.state = "EXECUTING";
+        readyQueue.pop();
+    };
+
+    void scheduleProcesses(Process& executingProcess, std::queue<Process>& readyQueue, BitMap& bitmap) {
+        if (readyQueue.size() != 0) {
+            if (schedulerType == 1) {
+                scheduleRoundRobin(executingProcess, readyQueue, bitmap);
+            } else {
+                scheduleFifo(executingProcess, readyQueue, bitmap);
+            }
+        }
+    }
+
+    void scheduleRoundRobin(Process& executingProcess, std::queue<Process>& readyQueue, BitMap& bitmap) {
+            Process nextInQueue = readyQueue.front();       
+            if (executingProcess.state == "EMPTY") {
+                setExecutingProcess(readyQueue, executingProcess);
+            } else {
+                executingProcess.state = "READY";
+                readyQueue.push(executingProcess);
+                setExecutingProcess(readyQueue, executingProcess);       
+            }
+    }
+
+    void scheduleFifo(Process& executingProcess, std::queue<Process>& readyQueue, BitMap& bitmap) {
+            Process nextInQueue = readyQueue.front();       
+            if (executingProcess.state == "EMPTY") {
+                setExecutingProcess(readyQueue, executingProcess);
+            }
+    }
+};
+
+std::vector<std::string> separateString(std::string message){
+    std::istringstream iss(message);
+    std::vector<std::string> elements;
+    std::string token;
+    while (iss >> token) {
+        elements.push_back(token);
+    }
+    return elements;
+}
+
+void operateSystemConfig(int& schedulerType, int& quantum) {
+    std::ifstream inConfig("config.txt", std::ios::in);
+    std::string line_config;
+    std::vector<std::string> config_parameter;
+    while (inConfig.peek() != std::ifstream::traits_type::eof()) {
+        std::getline(inConfig, line_config);
+        config_parameter = separateString(line_config);
+        if (config_parameter[0] == "-schedulerType") {
+            schedulerType = stoi(config_parameter[1]);
+        } else {
+            quantum = stoi(config_parameter[1]);
+        }
+    }
+};
 
 bool receiveComand(std::string& message){
     std::ifstream pipeIn("buffer.txt", std::ios::in);
@@ -175,17 +241,8 @@ bool receiveComand(std::string& message){
     }
     pipeIn.close();
     return false;
-};
-
-std::vector<std::string> separateString(std::string message){
-    std::istringstream iss(message);
-    std::vector<std::string> elements;
-    std::string token;
-    while (iss >> token) {
-        elements.push_back(token);
-    }
-    return elements;
 }
+
 
 std::string getProcessInstructions(){
     std::random_device rd;
@@ -194,36 +251,39 @@ std::string getProcessInstructions(){
     std::string randomProcess = AvailableProcess[distribuicao(gerador)];
     
     return randomProcess;
-};
+}
 
-void createProcess(std::string message, std::queue<Process>& readyQueue, BitMap& bitmap){
-    std::vector<std::string> elements = separateString(message);
-    int processID = PROCESS_ID++;
-    // instrução no formato create -m 4, element[2] = 4
-    int memorySize = std::stoi(elements[2]);
-    std::string processHeader;
-    int initPC = 0;
-    std::string instructions = getProcessInstructions();
+void createUserProcess(Process soProcess, std::queue<Process>& readyQueue, BitMap& bitmap){
+    std::string soCommand =  soProcess.instructions[0];
+    // instrução no formato create -m 4,
+    int memorySize = std::stoi(separateString(soCommand)[2]); 
     int freeSegment = bitmap.hasMemoryAvaliable(memorySize);
 
     // Cria processo se há memória suficiente
     if(freeSegment != -1) {
-        processHeader = "PID " + std::to_string(processID);
-        Process process(processID, processHeader, memorySize, initPC, true, "READY", "USER", readFile(instructions));
-        bitmap.allocateMemory(process, freeSegment);
-        readyQueue.push(process);
-
+        int processID = PROCESS_ID++;
+        std::string processHeader = "PID " + std::to_string(processID);
+        int initPC = 0;
+        std::string instructions = getProcessInstructions();
+        
+        Process userProcess(processID, processHeader, memorySize, initPC, true, "READY", "USER", readFile(instructions));
+        bitmap.allocateMemory(userProcess, freeSegment);
+        readyQueue.push(userProcess);
     } else {
-        processHeader = "create";
-        Process process(processID, processHeader, memorySize, initPC, false, "READY", "SO", {message});
-        //Colocar processo na fila de prontos
-        readyQueue.push(process);
+        soProcess.state = "READY";
+        readyQueue.push(soProcess);
     }
 
+}
 
-};
+Process createSOProcess(std::string message) {
+    int id = PROCESS_ID++;
+    std::string header = separateString(message)[0];
+    return Process(id, header, 0, 0, false, "READY", "SO", {message});
+}
 
-void killProcess(std::string message, std::queue<Process>& readyQueue, BitMap& bitmap){
+
+void killProcess(std::string message, std::queue<Process>& readyQueue, BitMap& bitmap) {
     std::queue<Process> copyQueue = readyQueue;
     std::queue<Process> newQueue;
 
@@ -242,57 +302,40 @@ void killProcess(std::string message, std::queue<Process>& readyQueue, BitMap& b
         copyQueue.pop();
     }
     readyQueue = newQueue;
+}
 
-};
-
-void setExecutingProcess(std::queue<Process>& readyQueue, Process& executingProcess) {
-    executingProcess = readyQueue.front();
-    executingProcess.state = "EXECUTING";
-    readyQueue.pop();
-};
-
-void scheduleProcesses(Process& executingProcess, std::queue<Process>& readyQueue, int schedulerType, BitMap& bitmap) {
-    if(schedulerType == 1 && readyQueue.size() != 0) {
-        Process nextInQueue = readyQueue.front();
-        executingProcess.state = "READY";
-        readyQueue.push(executingProcess);
-        executingProcess = nextInQueue;
-        executingProcess.state = "EXECUTING";
-        readyQueue.pop();
-    } 
+void executeOSInstruction(Process soProcess, std::queue<Process>& readyQueue, BitMap& bitmap) {
+    std::string soCommand = soProcess.instructions[0];
+    if (soProcess.header == "create"){
+        createUserProcess(soProcess, readyQueue, bitmap);
+    } else {
+        killProcess(soCommand, readyQueue, bitmap);
+    }
 }
 
 // Função responsável por executar um processo
-void runProcess(Process& executingProcess, std::queue<Process>& readyQueue, BitMap& bitmap) {
+void runProcess(Process& executingProcess, std::queue<Process>& readyQueue, BitMap& bitmap, int& terminated) {
     if (executingProcess.scope == "USER") {
-        executingProcess.programCounter++;
-    } else if (executingProcess.scope == "SO") {
-        std::string message = executingProcess.instructions[0];
-        if (message.find("create") != std::string::npos){
-            createProcess(message, readyQueue, bitmap);
+        int programCounter = executingProcess.programCounter;
+        std::string instruction = executingProcess.instructions[programCounter];
+        if (instruction.find("HLT") != std::string::npos) {
+            terminated = 1;
         } else {
-            killProcess(message, readyQueue, bitmap);
+            executingProcess.programCounter++;
         }
-        executingProcess = readyQueue.front();
-        readyQueue.pop();
+    } else if (executingProcess.scope == "SO") {
+        executeOSInstruction(executingProcess, readyQueue, bitmap);
+        terminated = 1;
     } 
-    else return;
 }
 
-void operateSystemConfig(int& schedulerKind, int& dispatcherClock) {
-    std::ifstream inConfig("config.txt", std::ios::in);
-    std::string line_config;
-    std::vector<std::string> config_parameter;
-    while (inConfig.peek() != std::ifstream::traits_type::eof()) {
-        std::getline(inConfig, line_config);
-        config_parameter = separateString(line_config);
-        if (config_parameter[0] == "-schedulerKind") {
-            schedulerKind = stoi(config_parameter[1]);
-        } else {
-            dispatcherClock = stoi(config_parameter[1]);
-        }
-    }
-};
+void terminateProcess(Process& executingProcess, std::queue<Process>& readyQueue, BitMap& bitmap, int& terminated) {
+    terminated = 0;
+    bitmap.deallocateMemory(executingProcess.id);
+    bitmap.compacted = 0;
+    executingProcess = Process(0, "", 0, 0, false, "EMPTY", "UNDEF", {});
+}
+
 
 void printReadyQueue(std::queue<Process> readyQueue) {
     std::cout << "Fila de Prontos - ";
@@ -311,7 +354,7 @@ void printExecutingProcess(Process executingProcess) {
     for(int i = 0; i < executingProcess.instructions.size(); i++) {
         std::string instruction = executingProcess.instructions[i];
         std::cout << instruction;
-        if (i == executingProcess.programCounter) {
+        if (i == executingProcess.programCounter - 1) {
             std::cout << " <--";
         }
         std::cout << "\n";
@@ -320,16 +363,21 @@ void printExecutingProcess(Process executingProcess) {
 };
 
 int main(){
-    int schedulerKind;
-    int dispatcherClock;
-    int execCounter = 0;
-    std::string message;
-    std::queue<Process> readyQueue;
-    Process executingProcess(0, "", 0, 0, false, "EMPTY", "UNDEF",{});
-    BitMap bitmap(true, memory);
+    // Configuração inicial
+    int schedulerType;
+    int quantum;
+    operateSystemConfig(schedulerType, quantum);
 
-    //procesa arquivo com confugurações iniciais
-    operateSystemConfig(schedulerKind, dispatcherClock);
+    // "Estruturas" vistas pelo SO 
+    std::queue<Process> readyQueue;
+    BitMap bitmap(true, memory);
+    Scheduler scheduler(schedulerType, quantum);
+    Process executingProcess(0, "", 0, 0, false, "EMPTY", "UNDEF", {});
+
+    // Variáveis de apoio
+    std::string message;
+    int execCounter = 0;
+    int processEnd = 0;
     
     // EXECUTA SO
     while(1) {
@@ -339,54 +387,39 @@ int main(){
             std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         } else {
             if(message.find("exit") != std::string::npos) break;
-            if(message.find("create") != std::string::npos) {
-                if(executingProcess.state == "EMPTY") { 
-                    createProcess(message, readyQueue, bitmap);
-                    setExecutingProcess(readyQueue, executingProcess);
-                } else {
-                    int processID = PROCESS_ID++;
-                    std::string processHeader = "create";
-                    Process process(processID, processHeader, 0, 0, false, "READY", "SO", {message});
-                    readyQueue.push(process); 
-                }
+            
+            Process newProcess = createSOProcess(message); // create or kill
+            if (executingProcess.state == "EMPTY") {
+                executeOSInstruction(newProcess, readyQueue, bitmap);
+                scheduler.scheduleProcesses(executingProcess, readyQueue, bitmap);
+            } else {
+                readyQueue.push(newProcess);
             }
-            if (message.find("kill") != std::string::npos) {
-                if(executingProcess.state=="EMPTY") {
-                    std::cout << "Não há processos em execução";
-                } else {
-                    int processID = PROCESS_ID++;
-                    std::string processHeader = "kill";
-                    Process process(processID, processHeader, 0, 0, false, "READY", "SO", {message});
-                    readyQueue.push(process);
-                    std::cout << "Mata esse cara \n";
-                }
-            }
-            //Printar na tela - IMPLEMENTAR (verificar se aqui é o melhor lugar para isso)
         }
 
         // BLOCO DE EXECUÇÃO
         if (executingProcess.state != "EMPTY") {
-            if (execCounter != dispatcherClock) {
-                runProcess(executingProcess, readyQueue, bitmap);
+            if (execCounter != scheduler.quantum) {
+                runProcess(executingProcess, readyQueue, bitmap, processEnd);
                 execCounter++;
             } else {
-                std::cout << "Scheduler Called \n";
-                scheduleProcesses(executingProcess, readyQueue, schedulerKind, bitmap);
+                scheduler.scheduleProcesses(executingProcess, readyQueue, bitmap);
+                execCounter = 0;
+            }
+            if (processEnd == 1) {
+                terminateProcess(executingProcess, readyQueue, bitmap, processEnd);
+                scheduler.scheduleProcesses(executingProcess, readyQueue, bitmap);
                 execCounter = 0;
             }
         }
 
+        // Imprime detalhes
         std::cout << std::string(25, '-') << "\n";
         printReadyQueue(readyQueue);
         printExecutingProcess(executingProcess);
         bitmap.printMemoryMap();
         std::cout << std::string(25, '-') << "\n";
         std::cout << "\n\n";
-        //implementar lógica de escalonamento de processos
-
-        //FIFO - IMPLEMENTAR
-
-        //Round-Robin - IMPLEMENTAR 
 
     }
     return 0;

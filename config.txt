@@ -1,2 +1,2 @@
--schedulerKind 1
--dispatcherClock 4
+-schedulerType 1
+-quantum 4
