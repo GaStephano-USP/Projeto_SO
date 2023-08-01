@@ -104,10 +104,17 @@ struct BitMap {
     };
 
     void printMemoryMap() {
-        for(int m: memory) {
-            std::cout << " | "<< m;
+        int mapRows = memory.size() / 4;
+        std::cout << "+" << std::string(23, '-') << "+\n";
+        std::cout << "|" << std::string(6, ' ') << "Mapa de bits" << std::string(5, ' ') << "|\n";
+        std::cout << "+" << std::string(23, '-') << "+\n";
+        for(int i = 0; i < mapRows; i++) {
+            std::cout << "|  " << memory[0 + 4*i];
+            std::cout << "  |  " << memory[1 + 4*i];
+            std::cout << "  |  " << memory[2 + 4*i];
+            std::cout << "  |  " << memory[3 + 4*i] << "  |\n";
+            std::cout << "+" << std::string(23, '-') << "+\n";
         }
-        std::cout << " | " << std::endl;
     };
 
     void compactMemory(){
@@ -338,14 +345,30 @@ void terminateProcess(Process& executingProcess, std::queue<Process>& readyQueue
 
 
 void printReadyQueue(std::queue<Process> readyQueue) {
-    std::cout << "Fila de Prontos - ";
+ 
+    std::string limitLine = "+"+std::string(17,'-')+"+";
+    std::string headerList = "| Fila de Prontos |";
+    
     while(!readyQueue.empty()) {
-        std::cout << readyQueue.front().header << "(" << readyQueue.front().state << ")" << " ";
+        std::string header = readyQueue.front().header;
+        limitLine += std::string(header.size()+2, '-');
+        limitLine += '+';
+        headerList += " ";
+        headerList.append(header);
+        headerList += " |";
         readyQueue.pop();
     }
-    std::cout << std::endl;
+    std::cout << limitLine << "\n";
+    std::cout << headerList << "\n";
+    std::cout << limitLine << "\n\n";
 
 };
+
+std::vector<std::string> getRegistersToSave(std::vector<std::string> instructions) {
+    std::vector<std::string> registers;
+    return registers;
+}
+
 
 void printExecutingProcess(Process executingProcess) {
     std::cout << "Executando: " << executingProcess.id << "  " << executingProcess.state;
@@ -414,11 +437,10 @@ int main(){
         }
 
         // Imprime detalhes
-        std::cout << std::string(25, '-') << "\n";
+
         printReadyQueue(readyQueue);
         printExecutingProcess(executingProcess);
         bitmap.printMemoryMap();
-        std::cout << std::string(25, '-') << "\n";
         std::cout << "\n\n";
 
     }
