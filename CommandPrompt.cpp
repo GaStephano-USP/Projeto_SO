@@ -2,6 +2,60 @@
 #include <string>
 #include <fstream>
 #include <cctype>
+#include <sstream>
+#include <vector>
+
+bool verifyCommand(std::string message){
+    std::istringstream iss(message); 
+    std::vector<std::string> tokens; 
+    std::string word;
+
+    while (iss >> word) { 
+        tokens.push_back(word); 
+    }
+
+    if(tokens[0] == "create"){
+        if(tokens.size() != 3){
+            std::cout << "Faltam argumentos, tente create -m 4.\n" << std::endl;
+            return false;
+        }
+        if(tokens[1] != "-m"){
+            std::cout << "Argumento não reconhecido, válido somente -m.\n" << std::endl;
+            return false;
+        }
+        try {
+            int num = std::stoi(tokens[2]);
+            if(num > 20){
+                std::cout << "Alocação máxima de 20 unidades de memória.\n" << std::endl;
+                return false;
+            }
+        } 
+        catch (const std::invalid_argument& ex) {
+            std::cout << "Erro: A unidade de memória não representa um número válido.\n" << std::endl;
+            return false;
+        }
+        return true;
+    }
+    if(tokens[0] == "kill"){
+        if(tokens.size() != 2){
+            std::cout << "Faltam argumentos, tente kill 2.\n" << std::endl;
+            return false;
+        }
+        try {
+            int num = std::stoi(tokens[1]);
+        } 
+        catch (const std::invalid_argument& ex) {
+            std::cout << "Erro: O ID não representa um número válido.\n" << std::endl;
+            return false;
+        }
+        return true;
+    }
+
+    if(tokens[0] == "exit") return true;
+
+    std::cout << "Comando inválido.\n" << std::endl;
+    return false;
+}
 
 int main() {
     std::string message;
@@ -15,15 +69,16 @@ int main() {
             message[i] = std::tolower(message[i]);
         }
 
-        //Verificar se comandos estão no padrão esperado, tanto em relação a memória pedida quanto no formato - IMPLEMENTAR
-
         std::ofstream pipeOut("buffer.txt", std::ios::out);
-        pipeOut << message << std::endl;
-        pipeOut.close();
-        if (message == "exit") {
-            break;
-        }
-    }
 
+        if(verifyCommand(message)){
+            pipeOut << message << std::endl;
+            pipeOut.close();
+            if (message == "exit") {
+                break;
+            }
+        }
+        pipeOut.close();
+    }
     return 0;
 }
