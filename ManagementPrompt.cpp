@@ -483,8 +483,6 @@ int main(){
         // BLOCO DE COMANDOS RECEBIDOS
         if(!receiveComand(message)) {
             std::this_thread::sleep_for(std::chrono::milliseconds(2500));
-
-
         } else {
             if(message.find("exit") != std::string::npos) break;
             
@@ -520,6 +518,9 @@ int main(){
                 scheduler.scheduleProcesses(executingProcess, readyQueue, bitmap, programCounter, registersToSave);
                 quantumCounter = 0;
             }
+        } else {
+            bitmap.printMemoryMap();
+            printReadyQueue(readyQueue);
         }
     }
     return 0;
