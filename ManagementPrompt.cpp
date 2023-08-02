@@ -36,7 +36,7 @@ std::vector<std::string> readFile(std::string filename){
     return {};
 };
 
-struct Process {
+struct TCB {
     int id;
     std::string header;
     int memorySize;
@@ -45,8 +45,9 @@ struct Process {
     std::string state;
     std::string scope;
     std::vector<std::string> instructions;
+    std::vector<std::string> registers;
 
-    Process(
+    TCB(
         int _id, 
         std::string _header,
         int _memorySize,
@@ -54,7 +55,8 @@ struct Process {
         bool _isAlocated,
         std::string _state,
         std::string _scope,
-        const std::vector<std::string>& _instructions
+        const std::vector<std::string> _instructions,
+        const std::vector<std::string> _registers
         ) {
         id = _id;
         header = _header;
@@ -64,13 +66,8 @@ struct Process {
         state = _state;
         scope = _scope;
         instructions = _instructions;
+        registers = _registers;
     };
-};
-
-struct TCB {
-    int process_id;
-    int programCounter;
-    std::vector<std::string> registers;
 };
 
 struct BitMap {
@@ -82,7 +79,7 @@ struct BitMap {
         memory = _memory;
     }
 
-    void allocateMemory(Process process, int startPos) {
+    void allocateMemory(TCB process, int startPos) {
         int memorySize = process.memorySize;
         std::cout << "Alocando " << memorySize << " a partir de" << startPos << "Para ID: "<< process.id <<"\n";
         for (int j = startPos; j < startPos + memorySize; j++) {
@@ -138,7 +135,7 @@ struct BitMap {
     int hasMemoryAvaliable(int memoryRequested){
         int start = 0;
         int count = 0;
-               // Percorre a memória em busca de posições livres
+        // Percorre a memória em busca de posições livres
         for (int i = 0; i < memory.size(); i++) {
             if (memory[i] == 0) {
                 if (count == 0) {
@@ -173,37 +170,39 @@ struct Scheduler {
         quantum = _quantum;
     };
 
-    void setExecutingProcess(std::queue<Process>& readyQueue, Process& executingProcess) {
+    void setExecutingProcess(std::queue<TCB>& readyQueue, TCB& executingProcess, int& programCounter) {
         executingProcess = readyQueue.front();
         executingProcess.state = "EXECUTING";
+        programCounter = executingProcess.programCounter;
         readyQueue.pop();
     };
 
-    void scheduleProcesses(Process& executingProcess, std::queue<Process>& readyQueue, BitMap& bitmap) {
+    void scheduleProcesses(TCB& executingProcess, std::queue<TCB>& readyQueue, BitMap& bitmap, int& programCounter) {
         if (readyQueue.size() != 0) {
             if (schedulerType == 1) {
-                scheduleRoundRobin(executingProcess, readyQueue, bitmap);
+                scheduleRoundRobin(executingProcess, readyQueue, bitmap, programCounter);
             } else {
-                scheduleFifo(executingProcess, readyQueue, bitmap);
+                scheduleFifo(executingProcess, readyQueue, bitmap, programCounter);
             }
         }
     }
 
-    void scheduleRoundRobin(Process& executingProcess, std::queue<Process>& readyQueue, BitMap& bitmap) {
-            Process nextInQueue = readyQueue.front();       
+    void scheduleRoundRobin(TCB& executingProcess, std::queue<TCB>& readyQueue, BitMap& bitmap, int& programCounter) {
+            TCB nextInQueue = readyQueue.front();       
             if (executingProcess.state == "EMPTY") {
-                setExecutingProcess(readyQueue, executingProcess);
+                setExecutingProcess(readyQueue, executingProcess, programCounter);
             } else {
                 executingProcess.state = "READY";
+                executingProcess.programCounter = programCounter;
                 readyQueue.push(executingProcess);
-                setExecutingProcess(readyQueue, executingProcess);       
+                setExecutingProcess(readyQueue, executingProcess, programCounter);       
             }
     }
 
-    void scheduleFifo(Process& executingProcess, std::queue<Process>& readyQueue, BitMap& bitmap) {
-            Process nextInQueue = readyQueue.front();       
+    void scheduleFifo(TCB& executingProcess, std::queue<TCB>& readyQueue, BitMap& bitmap, int& programCounter) {
+            TCB nextInQueue = readyQueue.front();       
             if (executingProcess.state == "EMPTY") {
-                setExecutingProcess(readyQueue, executingProcess);
+                setExecutingProcess(readyQueue, executingProcess, programCounter);
             }
     }
 };
@@ -260,7 +259,7 @@ std::string getProcessInstructions(){
     return randomProcess;
 }
 
-void createUserProcess(Process soProcess, std::queue<Process>& readyQueue, BitMap& bitmap){
+void createUserProcess(TCB soProcess, std::queue<TCB>& readyQueue, BitMap& bitmap){
     std::string soCommand =  soProcess.instructions[0];
     // instrução no formato create -m 4,
     int memorySize = std::stoi(separateString(soCommand)[2]); 
@@ -273,7 +272,7 @@ void createUserProcess(Process soProcess, std::queue<Process>& readyQueue, BitMa
         int initPC = 0;
         std::string instructions = getProcessInstructions();
         
-        Process userProcess(processID, processHeader, memorySize, initPC, true, "READY", "USER", readFile(instructions));
+        TCB userProcess(processID, processHeader, memorySize, initPC, true, "READY", "USER", readFile(instructions), {});
         bitmap.allocateMemory(userProcess, freeSegment);
         readyQueue.push(userProcess);
     } else {
@@ -283,22 +282,22 @@ void createUserProcess(Process soProcess, std::queue<Process>& readyQueue, BitMa
 
 }
 
-Process createSOProcess(std::string message) {
+TCB createSOProcess(std::string message) {
     int id = PROCESS_ID++;
     std::string header = separateString(message)[0];
-    return Process(id, header, 0, 0, false, "READY", "SO", {message});
+    return TCB(id, header, 0, 0, false, "READY", "SO", {message}, {});
 }
 
 
-void killProcess(std::string message, std::queue<Process>& readyQueue, BitMap& bitmap) {
-    std::queue<Process> copyQueue = readyQueue;
-    std::queue<Process> newQueue;
+void killProcess(std::string message, std::queue<TCB>& readyQueue, BitMap& bitmap) {
+    std::queue<TCB> copyQueue = readyQueue;
+    std::queue<TCB> newQueue;
 
     int targetPID = std::stoi((separateString(message)[1]));
     
     // Verifica process a ser eliminado na fila de prontos
     while (!copyQueue.empty()) {
-        Process process = copyQueue.front(); 
+        TCB process = copyQueue.front(); 
         if(targetPID == process.id) {
             if(process.isAlocated) {
                 if(!bitmap.deallocateMemory(targetPID)) std::cout << "ERRO AO LIBERAR MEMÓRIA \n";
@@ -311,7 +310,7 @@ void killProcess(std::string message, std::queue<Process>& readyQueue, BitMap& b
     readyQueue = newQueue;
 }
 
-void executeOSInstruction(Process soProcess, std::queue<Process>& readyQueue, BitMap& bitmap) {
+void executeOSInstruction(TCB soProcess, std::queue<TCB>& readyQueue, BitMap& bitmap) {
     std::string soCommand = soProcess.instructions[0];
     if (soProcess.header == "create"){
         createUserProcess(soProcess, readyQueue, bitmap);
@@ -321,14 +320,13 @@ void executeOSInstruction(Process soProcess, std::queue<Process>& readyQueue, Bi
 }
 
 // Função responsável por executar um processo
-void runProcess(Process& executingProcess, std::queue<Process>& readyQueue, BitMap& bitmap, int& terminated) {
+void runProcess(TCB& executingProcess, std::queue<TCB>& readyQueue, BitMap& bitmap, int& terminated, int& programCounter) {
     if (executingProcess.scope == "USER") {
-        int programCounter = executingProcess.programCounter;
         std::string instruction = executingProcess.instructions[programCounter];
         if (instruction.find("HLT") != std::string::npos) {
             terminated = 1;
         } else {
-            executingProcess.programCounter++;
+            programCounter++;
         }
     } else if (executingProcess.scope == "SO") {
         executeOSInstruction(executingProcess, readyQueue, bitmap);
@@ -336,15 +334,15 @@ void runProcess(Process& executingProcess, std::queue<Process>& readyQueue, BitM
     } 
 }
 
-void terminateProcess(Process& executingProcess, std::queue<Process>& readyQueue, BitMap& bitmap, int& terminated) {
+void terminateProcess(TCB& executingProcess, std::queue<TCB>& readyQueue, BitMap& bitmap, int& terminated) {
     terminated = 0;
     bitmap.deallocateMemory(executingProcess.id);
     bitmap.compacted = 0;
-    executingProcess = Process(0, "", 0, 0, false, "EMPTY", "UNDEF", {});
+    executingProcess = TCB(0, "", 0, 0, false, "EMPTY", "UNDEF", {}, {});
 }
 
 
-void printReadyQueue(std::queue<Process> readyQueue) {
+void printReadyQueue(std::queue<TCB> readyQueue) {
  
     std::string limitLine = "+"+std::string(17,'-')+"+";
     std::string headerList = "| Fila de Prontos |";
@@ -370,19 +368,39 @@ std::vector<std::string> getRegistersToSave(std::vector<std::string> instruction
 }
 
 
-void printExecutingProcess(Process executingProcess) {
-    std::cout << "Executando: " << executingProcess.id << "  " << executingProcess.state;
-    std::cout << " PC: " << executingProcess.programCounter;
+void printExecutingProcess(TCB executingProcess, int programCounter) {
+    // TCB 
+    
+    std::cout << "+" << std::string(31, '-') << "+\n"; 
+    std::cout << "|" << std::string(14, ' ') << "TCB" << std::string(14, ' ') << "|\n"; 
+    std::cout << "+" << std::string(31, '-') << "+\n"; 
+    std::cout << "|" << "PID: " << executingProcess.id << std::string(25, ' ') << "|\n"; 
+    std::cout << "+" << std::string(31, '-') << "+\n"; 
+    
+    for(int i = 0; i < executingProcess.registers.size(); i++) {
+        std::string reg = executingProcess.registers[i];
+        std::cout << "| " << std::string(29, '-') << " |\n"; 
+        std::cout << "+" << std::string(31, '-') << "+\n"; 
+    }
+
+    std::cout << "|" << "PC: " << executingProcess.programCounter << std::string(26, ' ') << "|\n"; 
+    std::cout << "+" << std::string(31, '-') << "+\n"; 
     std::cout << std::endl;
+    
+    // Instruções
+    
+    std::cout << "+" << std::string(31, '-') << "+\n"; 
     for(int i = 0; i < executingProcess.instructions.size(); i++) {
         std::string instruction = executingProcess.instructions[i];
-        std::cout << instruction;
-        if (i == executingProcess.programCounter - 1) {
-            std::cout << " <--";
+        std::cout << "| " << instruction << std::string(26 - instruction.size(), ' ');
+        if (i == programCounter) {
+            std::cout << "<-- " << "|\n";
         }
-        std::cout << "\n";
+        else {
+            std::cout << std::string(3, ' ') << " |\n";
+        }
+        std::cout << "+" << std::string(31, '-') << "+\n"; 
     }
-    std::cout << executingProcess.instructions.size() << "\n";
 };
 
 int main(){
@@ -392,29 +410,32 @@ int main(){
     operateSystemConfig(schedulerType, quantum);
 
     // "Estruturas" vistas pelo SO 
-    std::queue<Process> readyQueue;
+    std::queue<TCB> readyQueue;
     BitMap bitmap(true, memory);
     Scheduler scheduler(schedulerType, quantum);
-    Process executingProcess(0, "", 0, 0, false, "EMPTY", "UNDEF", {});
+    TCB executingProcess(0, "", 0, 0, false, "EMPTY", "UNDEF", {}, {});
 
-    // Variáveis de apoio
+    // Variáveis de execução
     std::string message;
-    int execCounter = 0;
+    int quantumCounter = 0;
     int processEnd = 0;
+    int programCounter = 0;
     
     // EXECUTA SO
     while(1) {
 
         // BLOCO DE COMANDOS RECEBIDOS
         if(!receiveComand(message)) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+            std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+
+
         } else {
             if(message.find("exit") != std::string::npos) break;
             
-            Process newProcess = createSOProcess(message); // create or kill
+            TCB newProcess = createSOProcess(message); // create or kill
             if (executingProcess.state == "EMPTY") {
                 executeOSInstruction(newProcess, readyQueue, bitmap);
-                scheduler.scheduleProcesses(executingProcess, readyQueue, bitmap);
+                scheduler.scheduleProcesses(executingProcess, readyQueue, bitmap, programCounter);
             } else {
                 readyQueue.push(newProcess);
             }
@@ -422,27 +443,28 @@ int main(){
 
         // BLOCO DE EXECUÇÃO
         if (executingProcess.state != "EMPTY") {
-            if (execCounter != scheduler.quantum) {
-                runProcess(executingProcess, readyQueue, bitmap, processEnd);
-                execCounter++;
+            if (quantumCounter != scheduler.quantum) {
+                runProcess(executingProcess, readyQueue, bitmap, processEnd, programCounter);
+                quantumCounter++;
             } else {
-                scheduler.scheduleProcesses(executingProcess, readyQueue, bitmap);
-                execCounter = 0;
+                scheduler.scheduleProcesses(executingProcess, readyQueue, bitmap, programCounter);
+                quantumCounter = 0;
             }
             if (processEnd == 1) {
                 terminateProcess(executingProcess, readyQueue, bitmap, processEnd);
-                scheduler.scheduleProcesses(executingProcess, readyQueue, bitmap);
-                execCounter = 0;
+                scheduler.scheduleProcesses(executingProcess, readyQueue, bitmap, programCounter);
+                quantumCounter = 0;
             }
+            
         }
 
         // Imprime detalhes
-
-        printReadyQueue(readyQueue);
-        printExecutingProcess(executingProcess);
+        if ( executingProcess.state != "EMPTY"){
+            printExecutingProcess(executingProcess, programCounter);
+        }
         bitmap.printMemoryMap();
+        printReadyQueue(readyQueue);
         std::cout << "\n\n";
-
     }
     return 0;
 }
