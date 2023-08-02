@@ -475,7 +475,6 @@ int main(){
     int quantumCounter = 0;
     int processEnd = 0;
     int programCounter = 0;
-    int contextSwitched = 0;
     std::set<std::string> registersToSave;
     
     // EXECUTA SO
@@ -510,7 +509,6 @@ int main(){
                 printReadyQueue(readyQueue);
                 std::cout << "\n\n";
                 
-                contextSwitched = 0;
                 programCounter++;
                 quantumCounter++;
             } else {
