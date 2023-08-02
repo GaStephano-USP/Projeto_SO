@@ -18,7 +18,6 @@ std::vector<int> memory(TOTAL_MEMORY_SIZE);
 
 std::vector<std::string> readFile(std::string filename){
     std::string path = "./Process/" + filename;
-    std::cout << path << "\n";
     std::vector<std::string> lines;
 
     std::ifstream file(path);
@@ -81,7 +80,6 @@ struct BitMap {
 
     void allocateMemory(TCB process, int startPos) {
         int memorySize = process.memorySize;
-        std::cout << "Alocando " << memorySize << " a partir de" << startPos << "Para ID: "<< process.id <<"\n";
         for (int j = startPos; j < startPos + memorySize; j++) {
             memory[j] = process.id; // Marcando a memória como alocada com o ID do processo
         }
@@ -102,17 +100,32 @@ struct BitMap {
 
     void printMemoryMap() {
         int mapRows = memory.size() / 4;
+        std::vector<int> bitMemory = getBitCopy();
+
         std::cout << "+" << std::string(23, '-') << "+\n";
         std::cout << "|" << std::string(6, ' ') << "Mapa de bits" << std::string(5, ' ') << "|\n";
         std::cout << "+" << std::string(23, '-') << "+\n";
         for(int i = 0; i < mapRows; i++) {
-            std::cout << "|  " << memory[0 + 4*i];
-            std::cout << "  |  " << memory[1 + 4*i];
-            std::cout << "  |  " << memory[2 + 4*i];
-            std::cout << "  |  " << memory[3 + 4*i] << "  |\n";
+            std::cout << "|  " << bitMemory[0 + 4*i];
+            std::cout << "  |  " << bitMemory[1 + 4*i];
+            std::cout << "  |  " << bitMemory[2 + 4*i];
+            std::cout << "  |  " << bitMemory[3 + 4*i] << "  |\n";
             std::cout << "+" << std::string(23, '-') << "+\n";
         }
     };
+
+    std::vector<int> getBitCopy(){
+        std::vector<int> bitMemory;
+        for(int m: memory){
+            if(m == 0) {
+                bitMemory.push_back(0);
+            } else {
+                bitMemory.push_back(1);
+
+            }
+        }
+        return bitMemory;
+    }
 
     void compactMemory(){
         int index = 0;
