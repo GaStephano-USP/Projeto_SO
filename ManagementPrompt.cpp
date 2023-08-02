@@ -1,6 +1,8 @@
 #include <vector>
+#include <set>
 #include <string>
 #include <iostream>
+#include <algorithm>
 #include <fstream>
 #include <thread>
 #include <chrono>
@@ -44,7 +46,7 @@ struct TCB {
     std::string state;
     std::string scope;
     std::vector<std::string> instructions;
-    std::vector<std::string> registers;
+    std::set<std::string> registers;
 
     TCB(
         int _id, 
@@ -55,7 +57,7 @@ struct TCB {
         std::string _state,
         std::string _scope,
         const std::vector<std::string> _instructions,
-        const std::vector<std::string> _registers
+        const std::set<std::string> _registers
         ) {
         id = _id;
         header = _header;
@@ -183,39 +185,64 @@ struct Scheduler {
         quantum = _quantum;
     };
 
-    void setExecutingProcess(std::queue<TCB>& readyQueue, TCB& executingProcess, int& programCounter) {
+    void setExecutingProcess(
+            std::queue<TCB>& readyQueue, 
+            TCB& executingProcess, 
+            int& programCounter, 
+            std::set<std::string>& registersToSave
+        ) {
         executingProcess = readyQueue.front();
         executingProcess.state = "EXECUTING";
         programCounter = executingProcess.programCounter;
+        registersToSave = executingProcess.registers;
         readyQueue.pop();
     };
 
-    void scheduleProcesses(TCB& executingProcess, std::queue<TCB>& readyQueue, BitMap& bitmap, int& programCounter) {
+    void scheduleProcesses(
+            TCB& executingProcess, 
+            std::queue<TCB>& readyQueue, 
+            BitMap& bitmap, 
+            int& programCounter,
+            std::set<std::string>& registersToSave
+        ) {
         if (readyQueue.size() != 0) {
             if (schedulerType == 1) {
-                scheduleRoundRobin(executingProcess, readyQueue, bitmap, programCounter);
+                scheduleRoundRobin(executingProcess, readyQueue, bitmap, programCounter, registersToSave);
             } else {
-                scheduleFifo(executingProcess, readyQueue, bitmap, programCounter);
+                scheduleFifo(executingProcess, readyQueue, bitmap, programCounter, registersToSave);
             }
         }
     }
 
-    void scheduleRoundRobin(TCB& executingProcess, std::queue<TCB>& readyQueue, BitMap& bitmap, int& programCounter) {
+    void scheduleRoundRobin(
+            TCB& executingProcess, 
+            std::queue<TCB>& readyQueue, 
+            BitMap& bitmap, 
+            int& programCounter,
+            std::set<std::string>& registersToSave
+        ) {
             TCB nextInQueue = readyQueue.front();       
             if (executingProcess.state == "EMPTY") {
-                setExecutingProcess(readyQueue, executingProcess, programCounter);
+                setExecutingProcess(readyQueue, executingProcess, programCounter, registersToSave);
             } else {
                 executingProcess.state = "READY";
                 executingProcess.programCounter = programCounter;
+                executingProcess.registers = registersToSave;
                 readyQueue.push(executingProcess);
-                setExecutingProcess(readyQueue, executingProcess, programCounter);       
+                setExecutingProcess(readyQueue, executingProcess, programCounter, registersToSave);       
             }
     }
 
-    void scheduleFifo(TCB& executingProcess, std::queue<TCB>& readyQueue, BitMap& bitmap, int& programCounter) {
+    void scheduleFifo(
+            TCB& executingProcess, 
+            std::queue<TCB>& readyQueue, 
+            BitMap& bitmap, 
+            int& programCounter,
+            std::set<std::string>& registersToSave
+        ) {
             TCB nextInQueue = readyQueue.front();       
             if (executingProcess.state == "EMPTY") {
-                setExecutingProcess(readyQueue, executingProcess, programCounter);
+                setExecutingProcess(readyQueue, executingProcess, programCounter, registersToSave);
             }
     }
 };
@@ -262,6 +289,59 @@ bool receiveComand(std::string& message){
     return false;
 }
 
+void printReadyQueue(std::queue<TCB> readyQueue) {
+ 
+    std::string limitLine = "+"+std::string(17,'-')+"+";
+    std::string headerList = "| Fila de Prontos |";
+    
+    while(!readyQueue.empty()) {
+        std::string header = readyQueue.front().header;
+        limitLine += std::string(header.size()+2, '-');
+        limitLine += '+';
+        headerList += " ";
+        headerList.append(header);
+        headerList += " |";
+        readyQueue.pop();
+    }
+    std::cout << limitLine << "\n";
+    std::cout << headerList << "\n";
+    std::cout << limitLine << "\n\n";
+
+};
+
+void printExecutingProcess(TCB executingProcess, int programCounter) {
+    
+    // TCB 
+    std::cout << "+" << std::string(31, '-') << "+\n"; 
+    std::cout << "|" << std::string(14, ' ') << "TCB" << std::string(14, ' ') << "|\n"; 
+    std::cout << "+" << std::string(31, '-') << "+\n"; 
+    std::cout << "|" << "PID: " << executingProcess.id << std::string(25, ' ') << "|\n"; 
+    std::cout << "+" << std::string(31, '-') << "+\n"; 
+    
+    for(std::string reg : executingProcess.registers) {
+        std::cout << "| REG:" << reg << std::string(23, ' ') << " |\n"; 
+        std::cout << "+" << std::string(31, '-') << "+\n"; 
+    }
+
+    std::cout << "|" << "PC: " << executingProcess.programCounter << std::string(26, ' ') << "|\n"; 
+    std::cout << "+" << std::string(31, '-') << "+\n"; 
+    std::cout << std::endl;
+    
+    // Instruções
+    
+    std::cout << "+" << std::string(31, '-') << "+\n"; 
+    for(int i = 0; i < executingProcess.instructions.size(); i++) {
+        std::string instruction = executingProcess.instructions[i];
+        std::cout << "| " << instruction << std::string(26 - instruction.size(), ' ');
+        if (i == programCounter) {
+            std::cout << "<-- " << "|\n";
+        }
+        else {
+            std::cout << std::string(3, ' ') << " |\n";
+        }
+        std::cout << "+" << std::string(31, '-') << "+\n"; 
+    }
+};
 
 std::string getProcessInstructions(){
     std::random_device rd;
@@ -332,14 +412,37 @@ void executeOSInstruction(TCB soProcess, std::queue<TCB>& readyQueue, BitMap& bi
     }
 }
 
+std::string getRegisterToSave(std::string instruction) {
+    std::string reg = separateString(instruction)[1];
+    if (reg[reg.size()-1] == ',') {
+        reg.resize(reg.size()-1);
+        return (reg);
+    }
+    return reg;
+}
+
+
 // Função responsável por executar um processo
-void runProcess(TCB& executingProcess, std::queue<TCB>& readyQueue, BitMap& bitmap, int& terminated, int& programCounter) {
+void runProcess(
+        TCB& executingProcess, 
+        std::queue<TCB>& readyQueue, 
+        BitMap& bitmap, 
+        int& terminated, 
+        int programCounter, 
+        std::set<std::string>& registersToSave
+    ) {
     if (executingProcess.scope == "USER") {
         std::string instruction = executingProcess.instructions[programCounter];
         if (instruction.find("HLT") != std::string::npos) {
             terminated = 1;
         } else {
-            programCounter++;
+            try {
+                std::string reg = getRegisterToSave(instruction);
+                registersToSave.insert(reg);
+            }
+            catch (const std::system_error &ex) {
+                std::cout << "Não foi possível salvar o registrador";
+            }
         }
     } else if (executingProcess.scope == "SO") {
         executeOSInstruction(executingProcess, readyQueue, bitmap);
@@ -354,67 +457,6 @@ void terminateProcess(TCB& executingProcess, std::queue<TCB>& readyQueue, BitMap
     executingProcess = TCB(0, "", 0, 0, false, "EMPTY", "UNDEF", {}, {});
 }
 
-
-void printReadyQueue(std::queue<TCB> readyQueue) {
- 
-    std::string limitLine = "+"+std::string(17,'-')+"+";
-    std::string headerList = "| Fila de Prontos |";
-    
-    while(!readyQueue.empty()) {
-        std::string header = readyQueue.front().header;
-        limitLine += std::string(header.size()+2, '-');
-        limitLine += '+';
-        headerList += " ";
-        headerList.append(header);
-        headerList += " |";
-        readyQueue.pop();
-    }
-    std::cout << limitLine << "\n";
-    std::cout << headerList << "\n";
-    std::cout << limitLine << "\n\n";
-
-};
-
-std::vector<std::string> getRegistersToSave(std::vector<std::string> instructions) {
-    std::vector<std::string> registers;
-    return registers;
-}
-
-
-void printExecutingProcess(TCB executingProcess, int programCounter) {
-    // TCB 
-    
-    std::cout << "+" << std::string(31, '-') << "+\n"; 
-    std::cout << "|" << std::string(14, ' ') << "TCB" << std::string(14, ' ') << "|\n"; 
-    std::cout << "+" << std::string(31, '-') << "+\n"; 
-    std::cout << "|" << "PID: " << executingProcess.id << std::string(25, ' ') << "|\n"; 
-    std::cout << "+" << std::string(31, '-') << "+\n"; 
-    
-    for(int i = 0; i < executingProcess.registers.size(); i++) {
-        std::string reg = executingProcess.registers[i];
-        std::cout << "| " << std::string(29, '-') << " |\n"; 
-        std::cout << "+" << std::string(31, '-') << "+\n"; 
-    }
-
-    std::cout << "|" << "PC: " << executingProcess.programCounter << std::string(26, ' ') << "|\n"; 
-    std::cout << "+" << std::string(31, '-') << "+\n"; 
-    std::cout << std::endl;
-    
-    // Instruções
-    
-    std::cout << "+" << std::string(31, '-') << "+\n"; 
-    for(int i = 0; i < executingProcess.instructions.size(); i++) {
-        std::string instruction = executingProcess.instructions[i];
-        std::cout << "| " << instruction << std::string(26 - instruction.size(), ' ');
-        if (i == programCounter) {
-            std::cout << "<-- " << "|\n";
-        }
-        else {
-            std::cout << std::string(3, ' ') << " |\n";
-        }
-        std::cout << "+" << std::string(31, '-') << "+\n"; 
-    }
-};
 
 int main(){
     // Configuração inicial
@@ -433,6 +475,8 @@ int main(){
     int quantumCounter = 0;
     int processEnd = 0;
     int programCounter = 0;
+    int contextSwitched = 0;
+    std::set<std::string> registersToSave;
     
     // EXECUTA SO
     while(1) {
@@ -448,36 +492,37 @@ int main(){
             TCB newProcess = createSOProcess(message); // create or kill
             if (executingProcess.state == "EMPTY") {
                 executeOSInstruction(newProcess, readyQueue, bitmap);
-                scheduler.scheduleProcesses(executingProcess, readyQueue, bitmap, programCounter);
+                scheduler.scheduleProcesses(executingProcess, readyQueue, bitmap, programCounter, registersToSave);
             } else {
                 readyQueue.push(newProcess);
             }
         }
 
+
         // BLOCO DE EXECUÇÃO
         if (executingProcess.state != "EMPTY") {
             if (quantumCounter != scheduler.quantum) {
-                runProcess(executingProcess, readyQueue, bitmap, processEnd, programCounter);
+                runProcess(executingProcess, readyQueue, bitmap, processEnd, programCounter, registersToSave);
+                
+                // Bloco print
+                printExecutingProcess(executingProcess, programCounter);
+                bitmap.printMemoryMap();
+                printReadyQueue(readyQueue);
+                std::cout << "\n\n";
+                
+                contextSwitched = 0;
+                programCounter++;
                 quantumCounter++;
             } else {
-                scheduler.scheduleProcesses(executingProcess, readyQueue, bitmap, programCounter);
+                scheduler.scheduleProcesses(executingProcess, readyQueue, bitmap, programCounter, registersToSave);
                 quantumCounter = 0;
             }
             if (processEnd == 1) {
                 terminateProcess(executingProcess, readyQueue, bitmap, processEnd);
-                scheduler.scheduleProcesses(executingProcess, readyQueue, bitmap, programCounter);
+                scheduler.scheduleProcesses(executingProcess, readyQueue, bitmap, programCounter, registersToSave);
                 quantumCounter = 0;
             }
-            
         }
-
-        // Imprime detalhes
-        if ( executingProcess.state != "EMPTY"){
-            printExecutingProcess(executingProcess, programCounter);
-        }
-        bitmap.printMemoryMap();
-        printReadyQueue(readyQueue);
-        std::cout << "\n\n";
     }
     return 0;
 }
