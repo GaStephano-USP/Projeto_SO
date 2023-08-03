@@ -14,6 +14,8 @@ const std::vector<std::string> AvailableProcess{"Process_A.txt", "Process_B.txt"
 
 const int TOTAL_MEMORY_SIZE = 20;
 
+const int WAIT_TIME = 2000;
+
 int PROCESS_ID = 1;
 
 std::vector<int> memory(TOTAL_MEMORY_SIZE);
@@ -482,7 +484,7 @@ int main(){
 
         // BLOCO DE COMANDOS RECEBIDOS
         if(!receiveComand(message)) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+            std::this_thread::sleep_for(std::chrono::milliseconds(WAIT_TIME));
         } else {
             if(message.find("exit") != std::string::npos) break;
             
